@@ -273,14 +273,18 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
     @Override
     public void enableWarmupMode() {
         if (warmupMode.compareAndSet(false, true)) {
-            routeToPool.values().forEach(PerRoutePool::enableWarmupMode);
+            for (final PerRoutePool<T, C> pool: routeToPool.values()) {
+                pool.enableWarmupMode();
+            }
         }
     }
 
     @Override
     public void disableWarmupMode() {
         if (warmupMode.compareAndSet(true, false)) {
-            routeToPool.values().forEach(PerRoutePool::disableWarmupMode);
+            for (final PerRoutePool<T, C> pool: routeToPool.values()) {
+                pool.disableWarmupMode();
+            }
         }
     }
 
