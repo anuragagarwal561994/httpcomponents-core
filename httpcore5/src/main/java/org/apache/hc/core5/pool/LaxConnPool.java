@@ -76,6 +76,7 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
     private final DisposalCallback<C> disposalCallback;
     private final ConnPoolListener<T> connPoolListener;
     private final ConcurrentMap<T, PerRoutePool<T, C>> routeToPool;
+    private final AtomicBoolean warmupMode;
     private final AtomicBoolean isShutDown;
 
     private volatile int defaultMaxPerRoute;
@@ -96,6 +97,7 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
         this.disposalCallback = disposalCallback;
         this.connPoolListener = connPoolListener;
         this.routeToPool = new ConcurrentHashMap<>();
+        this.warmupMode = new AtomicBoolean(false);
         this.isShutDown = new AtomicBoolean(false);
         this.defaultMaxPerRoute = defaultMaxPerRoute;
     }
@@ -179,6 +181,20 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
         }
         final PerRoutePool<T, C> routePool = getPool(entry.getRoute());
         routePool.release(entry, reusable);
+    }
+
+    @Override
+    public void enableWarmupMode() {
+        if (warmupMode.compareAndSet(false, true)) {
+            routeToPool.values().forEach(PerRoutePool::enableWarmupMode);
+        }
+    }
+
+    @Override
+    public void disableWarmupMode() {
+        if (warmupMode.compareAndSet(true, false)) {
+            routeToPool.values().forEach(PerRoutePool::disableWarmupMode);
+        }
     }
 
     public void validatePendingRequests() {
@@ -368,6 +384,7 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
         private final ConcurrentMap<PoolEntry<T, C>, Boolean> leased;
         private final Deque<AtomicMarkableReference<PoolEntry<T, C>>> available;
         private final Deque<LeaseRequest<T, C>> pending;
+        private final AtomicBoolean warmupMode;
         private final AtomicBoolean terminated;
         private final AtomicInteger allocated;
         private final AtomicLong releaseSeqNum;
@@ -392,10 +409,19 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
             this.leased = new ConcurrentHashMap<>();
             this.available = new ConcurrentLinkedDeque<>();
             this.pending = new ConcurrentLinkedDeque<>();
+            this.warmupMode = new AtomicBoolean(false);
             this.terminated = new AtomicBoolean(false);
             this.allocated = new AtomicInteger(0);
             this.releaseSeqNum = new AtomicLong(0);
             this.max = max;
+        }
+
+        public void enableWarmupMode() {
+            warmupMode.compareAndSet(false, true);
+        }
+
+        public void disableWarmupMode() {
+            warmupMode.compareAndSet(true, false);
         }
 
         public void shutdown(final CloseMode closeMode) {
@@ -447,6 +473,9 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
         }
 
         private PoolEntry<T, C> getAvailableEntry(final Object state) {
+            if (warmupMode.get()) {
+                return null;
+            }
             for (final Iterator<AtomicMarkableReference<PoolEntry<T, C>>> it = available.iterator(); it.hasNext(); ) {
                 final AtomicMarkableReference<PoolEntry<T, C>> ref = it.next();
                 final PoolEntry<T, C> entry = ref.getReference();
