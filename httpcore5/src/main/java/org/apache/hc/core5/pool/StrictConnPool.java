@@ -162,7 +162,7 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
     private PerRoutePool<T, C> getPool(final T route) {
         PerRoutePool<T, C> pool = this.routeToPool.get(route);
         if (pool == null) {
-            pool = new PerRoutePool<>(route, this.disposalCallback);
+            pool = new PerRoutePool<>(route, warmupMode, this.disposalCallback);
             this.routeToPool.put(route, pool);
         }
         return pool;
@@ -272,20 +272,12 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
 
     @Override
     public void enableWarmupMode() {
-        if (warmupMode.compareAndSet(false, true)) {
-            for (final PerRoutePool<T, C> pool: routeToPool.values()) {
-                pool.enableWarmupMode();
-            }
-        }
+        warmupMode.compareAndSet(false, true);
     }
 
     @Override
     public void disableWarmupMode() {
-        if (warmupMode.compareAndSet(true, false)) {
-            for (final PerRoutePool<T, C> pool: routeToPool.values()) {
-                pool.disableWarmupMode();
-            }
-        }
+        warmupMode.compareAndSet(true, false);
     }
 
     private void processPendingRequests() {
@@ -773,13 +765,13 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
         private final DisposalCallback<C> disposalCallback;
         private final AtomicBoolean warmupMode;
 
-        PerRoutePool(final T route, final DisposalCallback<C> disposalCallback) {
+        PerRoutePool(final T route, final AtomicBoolean warmupMode, final DisposalCallback<C> disposalCallback) {
             super();
             this.route = route;
             this.disposalCallback = disposalCallback;
             this.leased = new HashSet<>();
             this.available = new LinkedList<>();
-            this.warmupMode = new AtomicBoolean(false);
+            this.warmupMode = warmupMode;
         }
 
         public final T getRoute() {
@@ -796,14 +788,6 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
 
         public int getAllocatedCount() {
             return this.available.size() + this.leased.size();
-        }
-
-        public void enableWarmupMode() {
-            warmupMode.compareAndSet(false, true);
-        }
-
-        public void disableWarmupMode() {
-            warmupMode.compareAndSet(true, false);
         }
 
         public PoolEntry<T, C> getFree(final Object state) {

@@ -145,6 +145,7 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
                     defaultMaxPerRoute,
                     timeToLive,
                     policy,
+                    warmupMode,
                     this,
                     disposalCallback,
                     connPoolListener);
@@ -185,20 +186,12 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
 
     @Override
     public void enableWarmupMode() {
-        if (warmupMode.compareAndSet(false, true)) {
-            for (final PerRoutePool<T, C> routePool : routeToPool.values()) {
-                routePool.enableWarmupMode();
-            }
-        }
+        warmupMode.compareAndSet(false, true);
     }
 
     @Override
     public void disableWarmupMode() {
-        if (warmupMode.compareAndSet(true, false)) {
-            for (final PerRoutePool<T, C> routePool : routeToPool.values()) {
-                routePool.disableWarmupMode();
-            }
-        }
+        warmupMode.compareAndSet(true, false);
     }
 
     public void validatePendingRequests() {
@@ -400,6 +393,7 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
                 final int max,
                 final TimeValue timeToLive,
                 final PoolReusePolicy policy,
+                final AtomicBoolean warmupMode,
                 final ConnPoolStats<T> connPoolStats,
                 final DisposalCallback<C> disposalCallback,
                 final ConnPoolListener<T> connPoolListener) {
@@ -407,25 +401,17 @@ public class LaxConnPool<T, C extends ModalCloseable> implements ManagedConnPool
             this.route = route;
             this.timeToLive = timeToLive;
             this.policy = policy;
+            this.warmupMode = warmupMode;
             this.connPoolStats = connPoolStats;
             this.disposalCallback = disposalCallback;
             this.connPoolListener = connPoolListener;
             this.leased = new ConcurrentHashMap<>();
             this.available = new ConcurrentLinkedDeque<>();
             this.pending = new ConcurrentLinkedDeque<>();
-            this.warmupMode = new AtomicBoolean(false);
             this.terminated = new AtomicBoolean(false);
             this.allocated = new AtomicInteger(0);
             this.releaseSeqNum = new AtomicLong(0);
             this.max = max;
-        }
-
-        public void enableWarmupMode() {
-            warmupMode.compareAndSet(false, true);
-        }
-
-        public void disableWarmupMode() {
-            warmupMode.compareAndSet(true, false);
         }
 
         public void shutdown(final CloseMode closeMode) {
