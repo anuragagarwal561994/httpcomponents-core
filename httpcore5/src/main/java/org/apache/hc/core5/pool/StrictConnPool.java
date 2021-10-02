@@ -79,6 +79,7 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
     private final ConcurrentLinkedQueue<LeaseRequest<T, C>> completedRequests;
     private final Map<T, Integer> maxPerRoute;
     private final Lock lock;
+    private final AtomicBoolean warmupMode;
     private final AtomicBoolean isShutDown;
 
     private volatile int defaultMaxPerRoute;
@@ -108,6 +109,7 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
         this.completedRequests = new ConcurrentLinkedQueue<>();
         this.maxPerRoute = new HashMap<>();
         this.lock = new ReentrantLock();
+        this.warmupMode = new AtomicBoolean(false);
         this.isShutDown = new AtomicBoolean(false);
         this.defaultMaxPerRoute = defaultMaxPerRoute;
         this.maxTotal = maxTotal;
@@ -266,6 +268,20 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
             this.lock.unlock();
         }
         fireCallbacks();
+    }
+
+    @Override
+    public void enableWarmupMode() {
+        if (warmupMode.compareAndSet(false, true)) {
+            routeToPool.values().forEach(PerRoutePool::enableWarmupMode);
+        }
+    }
+
+    @Override
+    public void disableWarmupMode() {
+        if (warmupMode.compareAndSet(true, false)) {
+            routeToPool.values().forEach(PerRoutePool::disableWarmupMode);
+        }
     }
 
     private void processPendingRequests() {
@@ -751,6 +767,7 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
         private final Set<PoolEntry<T, C>> leased;
         private final LinkedList<PoolEntry<T, C>> available;
         private final DisposalCallback<C> disposalCallback;
+        private final AtomicBoolean warmupMode;
 
         PerRoutePool(final T route, final DisposalCallback<C> disposalCallback) {
             super();
@@ -758,6 +775,7 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
             this.disposalCallback = disposalCallback;
             this.leased = new HashSet<>();
             this.available = new LinkedList<>();
+            this.warmupMode = new AtomicBoolean(false);
         }
 
         public final T getRoute() {
@@ -776,7 +794,18 @@ public class StrictConnPool<T, C extends ModalCloseable> implements ManagedConnP
             return this.available.size() + this.leased.size();
         }
 
+        public void enableWarmupMode() {
+            warmupMode.compareAndSet(false, true);
+        }
+
+        public void disableWarmupMode() {
+            warmupMode.compareAndSet(true, false);
+        }
+
         public PoolEntry<T, C> getFree(final Object state) {
+            if (warmupMode.get()) {
+                return null;
+            }
             if (!this.available.isEmpty()) {
                 if (state != null) {
                     final Iterator<PoolEntry<T, C>> it = this.available.iterator();
