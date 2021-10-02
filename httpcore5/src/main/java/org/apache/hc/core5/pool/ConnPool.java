@@ -72,4 +72,8 @@ public interface ConnPool<T, C extends ModalCloseable> {
      */
     void release(PoolEntry<T, C> entry, boolean reusable);
 
+    void enableWarmupMode();
+
+    void disableWarmupMode();
+
 }
