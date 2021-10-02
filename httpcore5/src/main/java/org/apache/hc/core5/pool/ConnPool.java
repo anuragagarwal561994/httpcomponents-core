@@ -72,8 +72,14 @@ public interface ConnPool<T, C extends ModalCloseable> {
      */
     void release(PoolEntry<T, C> entry, boolean reusable);
 
+    /**
+     * When the warmup mode is enabled, connections are not reused upon release.
+     */
     void enableWarmupMode();
 
+    /**
+     * When the warmup mode is disabled, connections are reused upon release.
+     */
     void disableWarmupMode();
 
 }
